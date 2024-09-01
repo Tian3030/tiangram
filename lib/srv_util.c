@@ -24,7 +24,9 @@ int create_server_socket(unsigned short ideal_port){
     server_addr.sin_port=htons(ideal_port);
 
     if(bind(servSock,(struct sockaddr *)&server_addr,sizeof(server_addr))==-1){
-        perror("[-] Error binding the port"); close(servSock); return -1;
+        perror("[-] Error binding the port\n");
+        close(servSock); 
+        return -1;
     }
 
     if(ntohs(server_addr.sin_port)!=ideal_port){

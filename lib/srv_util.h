@@ -1,1 +1,1 @@
-int create_server_socket(unsigned short ideal_port,unsigned short * assigned_port);
+int create_server_socket(unsigned short ideal_port);
