@@ -82,8 +82,7 @@ void sendInfo(){
         char ch;
         scanf("%1c",&ch);
         while (getchar() != '\n');
-        if(ch=='y' || ch=='Y') break;
-        
+        if(ch=='y' || ch=='Y') break; 
     }
 
     int bytes;
@@ -91,5 +90,6 @@ void sendInfo(){
         perror("Error sending the information to the server"); 
         exit(-1);
     }
+    printf("%s,%s,%s has been sent\n",buffer[0],buffer[1],buffer[2]);
     
 }

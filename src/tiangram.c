@@ -20,9 +20,14 @@ typedef struct client_conn {
     int socket;
 } client_conn;
 
+char * getHexHash(struct client_conn * user,unsigned char * hash);
 void * serverService(void * client);
-void closeConn(int clientSocket);
+void closeConn(struct client_conn * client);
 void user_register(struct client_conn * user);
+void createChatIfNotExists(struct client_conn * client);
+
+const char shatsPath[]="shats/";
+
 
 int main(int argc,char * argv[]){
 
@@ -69,10 +74,9 @@ void * serverService(void * client){
     short finish=0;
 
     if(user==NULL){
-        closeConn(user->socket);
+        closeConn(user);
     }
     user_register(user);
-
     while(1){
             if (recv(user->socket, &integer, sizeof(int), MSG_WAITALL)!=sizeof(int))
             break;
@@ -119,44 +123,87 @@ void user_register(struct client_conn * user){
         iov[i].iov_base=&size[i];
     }
     if(readv(user->socket, iov, 3)<12){
-        closeConn(user->socket);
+        closeConn(user);
     }
 
     char * inputs[3];
     for(int i=0;i<3;i++){
         size[i]=ntohl(size[i]);
         if(size[i]>BUFFER_MAX || size[i]<0){
-            closeConn(user->socket);
+            closeConn(user);
         }
 
         inputs[i]=malloc(size[i]+1);    //Ponemos el \0 para el print
         inputs[i][size[i]]='\0'; //Forzamos que tenga el tam especificado
         if(inputs[i]==NULL){
-            closeConn(user->socket);
+            closeConn(user);
         }
         iov[i].iov_len=size[i];
         iov[i].iov_base=inputs[i];
     }
     if(readv(user->socket, iov, 3)<0){
-        closeConn(user->socket);
+        closeConn(user);
     }
+    //Alias set
+    user->alias=inputs[0];      //BORRAR INPUTS 1 Y 2 NO EL 0
+    //Hash calculation
     unsigned char hash[SHA_DIGEST_LENGTH];
     if((inputs[1]=realloc(inputs[1],size[1]+size[2]+1))==NULL){
-        closeConn(user->socket);
+        closeConn(user);
     }
     inputs[1][size[1]+size[2]]='\0';
-    strcpy(inputs[1]+size[1],inputs[2]);
-    printf("ROOM+PWD CONCAT: %s\n",inputs[1]);
-    //SHA1((unsigned char *)inputs[1],size[0], hash);
+    strcpy((inputs[1]+size[1]),inputs[2]);
+    SHA1((unsigned char *)inputs[1],size[1]+size[2], hash);
 
-    for (int i = 0; i < 20; i++)
-    {
-        printf("%02X\n", hash[i]);
-    }
+    char * chatTemp=getHexHash(user,hash);
+    strcpy(user->shat,chatTemp);
+    fprintf(stderr,"CHATCODE: %s\n",user->shat);
+    createChatIfNotExists(user);
+
+    memset(chatTemp,0,41);
+    memset(inputs[1],0,size[1]);
+    memset(inputs[2],0,size[2]);
+    free(chatTemp);
 }
 
-void closeConn(int clientSocket){
-    close(clientSocket);
+char * getHexHash(struct client_conn * user,unsigned char * hash){
+    char * hexHash = malloc(41);
+    if(hexHash==NULL) closeConn(user);
+    hexHash[40]='\0';
+
+    
+    for(int i=0;i<20;i++){
+        if((sprintf(hexHash+2*i,"%02X",hash[i]))<0){
+        closeConn(user);
+        }
+    }
+
+return hexHash;
+}
+
+void closeConn(struct client_conn * client){
+    close(client->socket);
     perror("Closing connection");
     exit(-1);
 }
+
+void createChatIfNotExists(struct client_conn * client){
+    char * path;
+    if((path = malloc(47))==NULL){
+        closeConn(client);
+    }
+    
+    strcpy(path,shatsPath);
+    strcpy(path+6,client->shat);
+    fprintf(stderr,"Trying to create %s\n",path);
+    if (access(path, F_OK) != 0) {  //File exists
+        //TODO give more permissions
+        if(creat(path,0777)==-1){
+            closeConn(client);
+        }
+    } else {
+        fprintf(stderr,"File already exists\n");
+    }
+
+}
+
