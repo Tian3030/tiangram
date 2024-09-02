@@ -16,6 +16,7 @@ void sendInfo();
 int clnSock;
 char buffer[256];
 int integer;
+
 //El server siempre usara el puerto 80(x ahora)
 const char * MSG[]={"INTRODUCE ALIAS","INTRODUCE SESSION NAME","INTRODUCE SESSION PASSWORD"};
 char byte;
@@ -40,13 +41,44 @@ if(connection==-1){
 
 sendInfo();
 
+int number1,number2,number3;
+int iovecs=-1;
+struct iovec * iov;
+
 while(1) {
     scanf("%10d",&integer); //Trunca para que no puedan overflowear el scan
-    while ((byte = getchar()) != '\n');
+    while ((byte = getchar()) != '\n'); //Retires the rest of buffer chars
 
-    printf("Enviando %d\n",integer);
-    integer=htonl(integer);
-    send(clnSock,&integer,sizeof(int),0);
+    switch(integer){
+        case 0:
+            break;
+        case 1: //Write to a shat
+            if((iov=malloc(sizeof(struct iovec)*3))==NULL){exit(-1);}
+            iovecs=3;
+            fgets(buffer,255,stdin);
+            number1=strlen(buffer);
+            buffer[number1]='\0';
+            iov[2].iov_len=number1;
+            iov[2].iov_base=buffer;
+
+            number1=htonl(number1);
+            iov[1].iov_len=sizeof(int);
+            iov[1].iov_base=&number1;
+
+            number2=htonl(1);
+            iov[0].iov_len=sizeof(int);
+            iov[0].iov_base=&number2;
+            break;
+        case 2: //Read to a shat
+            break;
+        
+    }
+
+    int bytes;
+    if ((bytes=writev(clnSock, iov, iovecs))<0) {
+        perror("Error sending the information to the server"); 
+        exit(-1);
+    }
 
 }
 

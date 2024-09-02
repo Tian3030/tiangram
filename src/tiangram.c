@@ -17,6 +17,7 @@ typedef struct client_conn {
     short size;
     char * alias; 
     char shat[41];
+    int shat_Socket;
     int socket;
 } client_conn;
 
@@ -24,8 +25,9 @@ char * getHexHash(struct client_conn * user,unsigned char * hash);
 void * serverService(void * client);
 void closeConn(struct client_conn * client);
 void user_register(struct client_conn * user);
-void createChatIfNotExists(struct client_conn * client);
-
+void readWriteOpps(struct client_conn * client,short read_write);
+void readChat(struct client_conn * client);
+void writeChat(struct client_conn * client);
 const char shatsPath[]="shats/";
 
 
@@ -80,17 +82,30 @@ void * serverService(void * client){
     while(1){
             if (recv(user->socket, &integer, sizeof(int), MSG_WAITALL)!=sizeof(int))
             break;
+
             integer=ntohl(integer);
 
- 
             switch(integer){
-                case 0: 
+                case 0:     //Connect to a shat
                     fprintf(stderr,"Entered %d\n",integer);
                     break;
-                case 1:
-                    fprintf(stderr,"Entered %d\n",integer);
-                    break;
-                case 2:
+                case 1:     //Write to a shat
+                fprintf(stderr,"Entered %d\n",integer);
+                if (recv(user->socket, &integer, sizeof(int), MSG_WAITALL)!=sizeof(int)){
+                finish=1;    
+                }
+                integer=ntohl(integer);
+
+                if(integer>0 && integer < BUFFER_MAX){  //Prohibiremos el length 0 al enviar un archivo
+                    if (recv(user->socket, user->message, integer, MSG_WAITALL)!=integer){  //Se le pasara al servidor el strlen
+                        finish=1;    
+                    }
+                } else finish=1;
+                user->size=integer;
+                readWriteOpps(user,1);
+                break;
+
+                case 2:     //Read from a shat
                     fprintf(stderr,"Entered %d\n",integer);
                     break;
                 case 80:
@@ -158,7 +173,6 @@ void user_register(struct client_conn * user){
     char * chatTemp=getHexHash(user,hash);
     strcpy(user->shat,chatTemp);
     fprintf(stderr,"CHATCODE: %s\n",user->shat);
-    createChatIfNotExists(user);
 
     memset(chatTemp,0,41);
     memset(inputs[1],0,size[1]);
@@ -183,11 +197,14 @@ return hexHash;
 
 void closeConn(struct client_conn * client){
     close(client->socket);
+    close(client->shat_Socket);
+    memset(client,0,sizeof(struct client_conn));
+    free(client);
     perror("Closing connection");
     exit(-1);
 }
 
-void createChatIfNotExists(struct client_conn * client){
+void readWriteOpps(struct client_conn * client,short read_write){
     char * path;
     if((path = malloc(47))==NULL){
         closeConn(client);
@@ -198,12 +215,39 @@ void createChatIfNotExists(struct client_conn * client){
     fprintf(stderr,"Trying to create %s\n",path);
     if (access(path, F_OK) != 0) {  //File exists
         //TODO give more permissions
-        if(creat(path,0777)==-1){
+        if((client->shat_Socket=creat(path,0777))==-1){
             closeConn(client);
         }
     } else {
-        fprintf(stderr,"File already exists\n");
+        if((client->shat_Socket=open(path,O_RDWR))==-1){
+            closeConn(client);
+        }
+        fprintf(stderr,"File already exists. socket: %d\n",client->shat_Socket);
     }
 
+    if(read_write==0){
+        readChat(client);
+    } else if(read_write==1) {
+        writeChat(client);
+    }
+
+    memset(path,0,47);
+    free(path);
+    close(client->shat_Socket);
 }
 
+void readChat(struct client_conn * client){
+    if(lseek(client->shat_Socket,0,SEEK_CUR)==-1){
+        closeConn(client);
+    }
+    
+}
+
+void writeChat(struct client_conn * client){
+    if(lseek(client->shat_Socket,0,SEEK_END)==-1){
+        closeConn(client);
+    }
+    if(write(client->shat_Socket,client->message,client->size)==-1){
+        closeConn(client);
+    }
+}
