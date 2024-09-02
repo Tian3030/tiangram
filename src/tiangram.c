@@ -9,23 +9,23 @@
 #include <sys/socket.h>
 #include <errno.h>
 #include "../lib/srv_util.h"
+ #include <openssl/sha.h>
+#define BUFFER_MAX 255
 
-void * serverService(void * client);
-int user_register();
-
-typedef struct client_conn{
-    char message[256];
+typedef struct client_conn {
+    char message[BUFFER_MAX+1];
     short size;
-    char * alias;
+    char * alias; 
     char shat[41];
     int socket;
-}client_conn;
+} client_conn;
 
-
-
-int cliSock;
+void * serverService(void * client);
+void closeConn(int clientSocket);
+void user_register(struct client_conn * user);
 
 int main(int argc,char * argv[]){
+
     if (argc!=2) {
         fprintf(stderr, "Usage: %s <port>\n",argv[0]);
         return -1;
@@ -39,7 +39,7 @@ int main(int argc,char * argv[]){
     pthread_attr_t atrib_th;
     pthread_attr_init(&atrib_th); 
     pthread_attr_setdetachstate(&atrib_th, PTHREAD_CREATE_DETACHED);
-
+    int cliSock;
     while(1){
 
         fprintf(stderr,"Waiting for connections\n");
@@ -48,14 +48,12 @@ int main(int argc,char * argv[]){
             return -1;
         }
 
-    struct client_conn * client_info = calloc(1,sizeof(struct client_conn));
+    struct client_conn * client_info = malloc(sizeof(struct client_conn));
     client_info->socket=cliSock;
-    
     pthread_create(&thid,&atrib_th,serverService,client_info);   
     }    
 
     close(servSock);
-
     return 0;
 }
 
@@ -64,37 +62,32 @@ int main(int argc,char * argv[]){
         0)  Log in to a chat with name & password of a session
         1)  Send message into a chat (with alias as nickname)
         2)  Read messages from a chat
-
 */
 void * serverService(void * client){
-    
-    
-    
-    struct client_conn * cliSock = (struct client_conn *) client;
+    struct client_conn * user = (struct client_conn *) client;
     int integer=-1;
     short finish=0;
 
-    //Antes de enviar alias, nombre sesion y tamaños enviará las longitudes.
-
-    
-
-    user_register();
+    if(user==NULL){
+        closeConn(user->socket);
+    }
+    user_register(user);
 
     while(1){
-            if (recv(cliSock->socket, &integer, sizeof(int), MSG_WAITALL)!=sizeof(int))
+            if (recv(user->socket, &integer, sizeof(int), MSG_WAITALL)!=sizeof(int))
             break;
             integer=ntohl(integer);
 
  
             switch(integer){
                 case 0: 
-                    printf("Entered %d\n",integer);
+                    fprintf(stderr,"Entered %d\n",integer);
                     break;
                 case 1:
-                    printf("Entered %d\n",integer);
+                    fprintf(stderr,"Entered %d\n",integer);
                     break;
                 case 2:
-                    printf("Entered %d\n",integer);
+                    fprintf(stderr,"Entered %d\n",integer);
                     break;
                 case 80:
                     finish=1;
@@ -104,10 +97,10 @@ void * serverService(void * client){
             if(finish) break;
     }
 
-    close(cliSock->socket);
+    close(user->socket);
     memset(client,0,sizeof(struct client_conn));
     free(client);
-    exit(0);
+    return 0;
 }
 
 /* TODO
@@ -117,46 +110,53 @@ void * serverService(void * client){
 
 */
 
-int user_register(){
-    int size1,size2,size3;
+void user_register(struct client_conn * user){
+    
+    int size[3]; //Los sizes tienen +1 por el \0
     struct iovec iov[3];
-    iov[0].iov_base = &size1;
-    iov[0].iov_len = sizeof(int);
-    iov[1].iov_base = &size2;
-    iov[1].iov_len = sizeof(int);
-    iov[2].iov_base = &size3;
-    iov[2].iov_len = sizeof(int);
-
-    if(readv(cliSock, iov, 3)<12){
-        perror("Error reading sizes");
-        return -1;
+    for(int i=0;i<3;i++){
+        iov[i].iov_len=sizeof(int);
+        iov[i].iov_base=&size[i];
     }
-    size1=ntohl(size1);
-    size2=ntohl(size2);
-    size3=ntohl(size3);
-    struct iovec iov2[3];
-    char buffer1[size1];
-    char buffer2[size1];
-    char buffer3[size1];
-
-    iov2[0].iov_base = buffer1;
-    iov2[0].iov_len = size1;
-    iov2[1].iov_base = buffer2;
-    iov2[1].iov_len = size2;
-    iov2[2].iov_base = buffer3;
-    iov2[2].iov_len = size3;
-
-    if(readv(cliSock, iov2, 3)<0){
-        perror("Error reading sizes");
-        return -1;
+    if(readv(user->socket, iov, 3)<12){
+        closeConn(user->socket);
     }
 
-    printf("Los datos recibidos son: %s\n%s\n%s\n",buffer1,buffer2,buffer3);
+    char * inputs[3];
+    for(int i=0;i<3;i++){
+        size[i]=ntohl(size[i]);
+        if(size[i]>BUFFER_MAX || size[i]<0){
+            closeConn(user->socket);
+        }
 
-    return 0;
+        inputs[i]=malloc(size[i]+1);    //Ponemos el \0 para el print
+        inputs[i][size[i]]='\0'; //Forzamos que tenga el tam especificado
+        if(inputs[i]==NULL){
+            closeConn(user->socket);
+        }
+        iov[i].iov_len=size[i];
+        iov[i].iov_base=inputs[i];
+    }
+    if(readv(user->socket, iov, 3)<0){
+        closeConn(user->socket);
+    }
+    unsigned char hash[SHA_DIGEST_LENGTH];
+    if((inputs[1]=realloc(inputs[1],size[1]+size[2]+1))==NULL){
+        closeConn(user->socket);
+    }
+    inputs[1][size[1]+size[2]]='\0';
+    strcpy(inputs[1]+size[1],inputs[2]);
+    printf("ROOM+PWD CONCAT: %s\n",inputs[1]);
+    //SHA1((unsigned char *)inputs[1],size[0], hash);
+
+    for (int i = 0; i < 20; i++)
+    {
+        printf("%02X\n", hash[i]);
+    }
 }
 
-void createChatIfNotExists(){
-
+void closeConn(int clientSocket){
+    close(clientSocket);
+    perror("Closing connection");
+    exit(-1);
 }
-
