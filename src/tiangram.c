@@ -14,10 +14,11 @@
 #include "../lib/srv_util.h" 
 #define BUFFER_MAX 255
 
+
 typedef struct client_conn {
-    char message[BUFFER_MAX+1];
-    short size;
-    char * alias; 
+    char * message; 
+    short size; //Tam del mensaje
+    short alias_size;
     char shat[41];
     off_t shatOffset;
     int shat_Socket;
@@ -94,19 +95,20 @@ void * serverService(void * client){
                     fprintf(stderr,"Entered %d\n",integer);
                     break;
                 case 1:     //Write to a shat
+
                 fprintf(stderr,"Entered %d\n",integer);
-                if (recv(user->socket, &integer, sizeof(int), MSG_WAITALL)!=sizeof(int)){
+                if (recv(user->socket, &integer, sizeof(int), MSG_WAITALL)!=sizeof(int)){   //Gets the size of 
                 finish=1;    
                 }
                 integer=ntohl(integer);
 
                 if(integer>0 && integer < BUFFER_MAX){  //Prohibiremos el length 0 al enviar un archivo
-                    if (recv(user->socket, user->message, integer, MSG_WAITALL)!=integer){  //Se le pasara al servidor el strlen
+                    user->size=integer;
+                    if (recv(user->socket, user->message+user->alias_size, user->size, MSG_WAITALL)!=user->size){  //Se le pasara al servidor el strlen
                         finish=1;    
                     }
                 } else finish=1;
-                user->size=integer;
-                user->shatOffset=0;
+                
                 readWriteOpps(user,1);
                 break;
 
@@ -155,18 +157,39 @@ void user_register(struct client_conn * user){
         }
 
         inputs[i]=malloc(size[i]+1);    //Ponemos el \0 para el print
-        inputs[i][size[i]]='\0'; //Forzamos que tenga el tam especificado
         if(inputs[i]==NULL){
             closeConn(user,159);
         }
+        inputs[i][size[i]]='\0'; //Forzamos que tenga el tam especificado
+
         iov[i].iov_len=size[i];
         iov[i].iov_base=inputs[i];
     }
     if(readv(user->socket, iov, 3)<0){
         closeConn(user,165);
     }
+    //True size comprobation 
+    for(int i=0;i<3;i++){
+        if(size[i]!=strlen(inputs[i])) closeConn(user,173);
+    }
+
     //Alias set
-    user->alias=inputs[0];      //BORRAR INPUTS 1 Y 2 NO EL 0
+    user->alias_size=size[0]+1;//+:(1) Starting from int[user->alias] point we can strcpy the actual message (Max 255 bytes)
+    
+    //Shat offset set
+    user->shatOffset=0;
+
+    //BORRAR INPUTS 1 Y 2 NO EL 0
+    if((user->message=calloc(1,strlen(inputs[0])+1+BUFFER_MAX*sizeof(char) +1))==NULL){ //Max message length (alias_strlen + : + BUFFER_MAX_LENGTH + 1)
+        closeConn(user,172);
+    }   
+
+    //Pegamos el alias en la primera parte del buffer.
+    strcpy(user->message,inputs[0]);
+    user->message[size[0]]=':';
+    user->message[size[0]+1]='\0';
+    printf("Message: %s\n",user->message);
+
     //Hash calculation
     unsigned char hash[SHA_DIGEST_LENGTH];
     if((inputs[1]=realloc(inputs[1],size[1]+size[2]+1))==NULL){
@@ -253,6 +276,7 @@ void readChat(struct client_conn * client){
 
 
         sentBytes=sentBytes - client->shatOffset;
+        printf("%d bytes are about to be sent\n",sentBytes);
 
         sentBytes=htonl(sentBytes);
         send(client->socket,&sentBytes,sizeof(int),0);
@@ -260,7 +284,7 @@ void readChat(struct client_conn * client){
 
     if((sentBytes!=0)){
         int bytes_read=-1;
-        if((bytes_read=sendfile(client->socket,client->shat_Socket,NULL,sentBytes-client->shatOffset))==-1){
+        if((bytes_read=sendfile(client->socket,client->shat_Socket,NULL,sentBytes))==-1){
             closeConn(client,262);
         }
 
@@ -274,8 +298,10 @@ void writeChat(struct client_conn * client){
     if(lseek(client->shat_Socket,0,SEEK_END)==-1){
         closeConn(client,271);
     }
+
     
-    if(write(client->shat_Socket,client->message,client->size)==-1){
+    if(write(client->shat_Socket,client->message,strlen(client->message))==-1){
         closeConn(client,275);
     }
+    memset(client->message+client->alias_size,0,BUFFER_MAX);
 }

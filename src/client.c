@@ -156,5 +156,4 @@ void sendInfo(){
         exit(-1);
     }
     printf("%s,%s,%s has been sent\n",buffer[0],buffer[1],buffer[2]);
-    
 }
