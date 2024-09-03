@@ -12,6 +12,7 @@
 #include "../lib/cln_util.h"
 #define MAX_BUFFER 255
 
+void closeConn();
 void sendInfo();
 int clnSock;
 char buffer[256];
@@ -46,38 +47,65 @@ int iovecs=-1;
 struct iovec * iov;
 
 while(1) {
+    printf("[+] Press\n\t1) to write\n\t2) to read\n");
+
     scanf("%10d",&integer); //Trunca para que no puedan overflowear el scan
     while ((byte = getchar()) != '\n'); //Retires the rest of buffer chars
+
+    //printf("Se ha pulsado %d\n",integer);
+    integer=htonl(integer);
+    if(send(clnSock,&integer,sizeof(int),0)==-1){
+        closeConn();
+    }
+    integer=ntohl(integer);
 
     switch(integer){
         case 0:
             break;
         case 1: //Write to a shat
             if((iov=malloc(sizeof(struct iovec)*3))==NULL){exit(-1);}
-            iovecs=3;
+            iovecs=2;
             fgets(buffer,255,stdin);
             number1=strlen(buffer);
             buffer[number1]='\0';
-            iov[2].iov_len=number1;
-            iov[2].iov_base=buffer;
-
+            iov[1].iov_len=number1;
+            iov[1].iov_base=buffer;
             number1=htonl(number1);
-            iov[1].iov_len=sizeof(int);
-            iov[1].iov_base=&number1;
-
-            number2=htonl(1);
             iov[0].iov_len=sizeof(int);
-            iov[0].iov_base=&number2;
+            iov[0].iov_base=&number1;
+
+            int bytes;
+            if ((bytes=writev(clnSock, iov, iovecs))<0) {
+                perror("Error sending the information to the server"); 
+                exit(-1);
+            }
+
             break;
         case 2: //Read to a shat
-            break;
-        
-    }
+            if(recv(clnSock,&number1,sizeof(int),0)==-1){
+                closeConn();
+            }            
+            number1=ntohl(number1);   //File tam
 
-    int bytes;
-    if ((bytes=writev(clnSock, iov, iovecs))<0) {
-        perror("Error sending the information to the server"); 
-        exit(-1);
+            printf("Reading %d bytes\n",number1);
+            if(number1!=0){
+                memset(buffer,0,255);
+
+                while(number1>0) {
+                    number2=read(clnSock,buffer,255);
+
+                    printf("File: %s\n",buffer);
+                    printf("%d number\n",number2);  
+                    number1-=number2;   //Chars restantes a scanear
+                }
+
+                if(number2==-1) closeConn();
+                printf("Finished reading\n");
+            } else {
+                printf("Nothing to read\n");
+            }
+            
+            break;
     }
 
 }
@@ -85,6 +113,11 @@ while(1) {
 memset(buffer,0,256);
 close(clnSock);
 return 0;
+}
+
+void closeConn(){
+close(clnSock);
+exit(-1);
 }
 
 //Primero se envian las longitudes

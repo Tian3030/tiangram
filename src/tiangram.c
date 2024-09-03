@@ -8,8 +8,10 @@
 #include <pthread.h>
 #include <sys/socket.h>
 #include <errno.h>
-#include "../lib/srv_util.h"
- #include <openssl/sha.h>
+#include <openssl/sha.h>
+#include <sys/sendfile.h>
+
+#include "../lib/srv_util.h" 
 #define BUFFER_MAX 255
 
 typedef struct client_conn {
@@ -17,13 +19,14 @@ typedef struct client_conn {
     short size;
     char * alias; 
     char shat[41];
+    off_t shatOffset;
     int shat_Socket;
     int socket;
 } client_conn;
 
 char * getHexHash(struct client_conn * user,unsigned char * hash);
 void * serverService(void * client);
-void closeConn(struct client_conn * client);
+void closeConn(struct client_conn * client,int code);
 void user_register(struct client_conn * user);
 void readWriteOpps(struct client_conn * client,short read_write);
 void readChat(struct client_conn * client);
@@ -76,7 +79,7 @@ void * serverService(void * client){
     short finish=0;
 
     if(user==NULL){
-        closeConn(user);
+        closeConn(user,82);
     }
     user_register(user);
     while(1){
@@ -84,6 +87,7 @@ void * serverService(void * client){
             break;
 
             integer=ntohl(integer);
+            printf("Instruction %d received\n",integer);
 
             switch(integer){
                 case 0:     //Connect to a shat
@@ -102,11 +106,13 @@ void * serverService(void * client){
                     }
                 } else finish=1;
                 user->size=integer;
+                user->shatOffset=0;
                 readWriteOpps(user,1);
                 break;
 
                 case 2:     //Read from a shat
                     fprintf(stderr,"Entered %d\n",integer);
+                    readWriteOpps(user,0);
                     break;
                 case 80:
                     finish=1;
@@ -138,33 +144,33 @@ void user_register(struct client_conn * user){
         iov[i].iov_base=&size[i];
     }
     if(readv(user->socket, iov, 3)<12){
-        closeConn(user);
+        closeConn(user,146);
     }
 
     char * inputs[3];
     for(int i=0;i<3;i++){
         size[i]=ntohl(size[i]);
         if(size[i]>BUFFER_MAX || size[i]<0){
-            closeConn(user);
+            closeConn(user,153);
         }
 
         inputs[i]=malloc(size[i]+1);    //Ponemos el \0 para el print
         inputs[i][size[i]]='\0'; //Forzamos que tenga el tam especificado
         if(inputs[i]==NULL){
-            closeConn(user);
+            closeConn(user,159);
         }
         iov[i].iov_len=size[i];
         iov[i].iov_base=inputs[i];
     }
     if(readv(user->socket, iov, 3)<0){
-        closeConn(user);
+        closeConn(user,165);
     }
     //Alias set
     user->alias=inputs[0];      //BORRAR INPUTS 1 Y 2 NO EL 0
     //Hash calculation
     unsigned char hash[SHA_DIGEST_LENGTH];
     if((inputs[1]=realloc(inputs[1],size[1]+size[2]+1))==NULL){
-        closeConn(user);
+        closeConn(user,172);
     }
     inputs[1][size[1]+size[2]]='\0';
     strcpy((inputs[1]+size[1]),inputs[2]);
@@ -182,47 +188,45 @@ void user_register(struct client_conn * user){
 
 char * getHexHash(struct client_conn * user,unsigned char * hash){
     char * hexHash = malloc(41);
-    if(hexHash==NULL) closeConn(user);
+    if(hexHash==NULL) closeConn(user,190);
     hexHash[40]='\0';
 
     
     for(int i=0;i<20;i++){
         if((sprintf(hexHash+2*i,"%02X",hash[i]))<0){
-        closeConn(user);
+        closeConn(user,196);
         }
     }
 
 return hexHash;
 }
 
-void closeConn(struct client_conn * client){
+void closeConn(struct client_conn * client,int line){
     close(client->socket);
     close(client->shat_Socket);
     memset(client,0,sizeof(struct client_conn));
     free(client);
-    perror("Closing connection");
+    fprintf(stderr,"Closing connection\tError code #%d\n",line);
     exit(-1);
 }
 
 void readWriteOpps(struct client_conn * client,short read_write){
     char * path;
     if((path = malloc(47))==NULL){
-        closeConn(client);
+        closeConn(client,215);
     }
     
     strcpy(path,shatsPath);
     strcpy(path+6,client->shat);
-    fprintf(stderr,"Trying to create %s\n",path);
     if (access(path, F_OK) != 0) {  //File exists
         //TODO give more permissions
         if((client->shat_Socket=creat(path,0777))==-1){
-            closeConn(client);
+            closeConn(client,224);
         }
     } else {
         if((client->shat_Socket=open(path,O_RDWR))==-1){
-            closeConn(client);
+            closeConn(client,228);
         }
-        fprintf(stderr,"File already exists. socket: %d\n",client->shat_Socket);
     }
 
     if(read_write==0){
@@ -237,17 +241,41 @@ void readWriteOpps(struct client_conn * client,short read_write){
 }
 
 void readChat(struct client_conn * client){
-    if(lseek(client->shat_Socket,0,SEEK_CUR)==-1){
-        closeConn(client);
+    int sentBytes;
+    if((sentBytes=lseek(client->shat_Socket,0,SEEK_END))==-1){    //Calculate the file size
+        closeConn(client,247);
     }
-    
+    if(lseek(client->shat_Socket,client->shatOffset,SEEK_SET)==-1){
+        closeConn(client,250);
+    }
+
+    printf("File size:%d\n",sentBytes);
+
+
+        sentBytes=sentBytes - client->shatOffset;
+
+        sentBytes=htonl(sentBytes);
+        send(client->socket,&sentBytes,sizeof(int),0);
+        sentBytes=ntohl(sentBytes);
+
+    if((sentBytes!=0)){
+        int bytes_read=-1;
+        if((bytes_read=sendfile(client->socket,client->shat_Socket,NULL,sentBytes-client->shatOffset))==-1){
+            closeConn(client,262);
+        }
+
+        client->shatOffset+=bytes_read; //Update read pointer
+        printf("New offset: %li\n",client->shatOffset);
+    }
+
 }
 
 void writeChat(struct client_conn * client){
     if(lseek(client->shat_Socket,0,SEEK_END)==-1){
-        closeConn(client);
+        closeConn(client,271);
     }
+    
     if(write(client->shat_Socket,client->message,client->size)==-1){
-        closeConn(client);
+        closeConn(client,275);
     }
 }
