@@ -107,6 +107,8 @@ const char *redirectTemplate = "<!DOCTYPE html>\n"
 const char *errorpage =
   "<html><body>This doesn't seem to be right.</body></html>";
 
+
+/*
 // Registers the user and sets the conn->fd used to the connection response
 struct MHD_Response *user_register(struct conn_info *user)
 {
@@ -139,7 +141,7 @@ struct MHD_Response *user_register(struct conn_info *user)
     unsigned char hash[SHA_DIGEST_LENGTH];
     SHA1((unsigned char *)roomCreds, sizeOftoHashBuffer, hash);
 
-    char *chatTemp = getHexHash(user, hash);
+    char *chatTemp = getHexHash(hash);
     if (chatTemp == NULL)
         return NULL;
 
@@ -188,10 +190,10 @@ struct MHD_Response *user_register(struct conn_info *user)
     free(statbuf);
     return response;
 }
-
-char *getHexHash(struct conn_info *user, unsigned char *hash)
+*/
+char *getHexHash(unsigned char *hash)
 {
-    char *hexHash = malloc(41);
+    char *hexHash = (char*) malloc(41);
     if (hexHash == NULL)
         return NULL;
     hexHash[40] = '\0';
@@ -206,13 +208,13 @@ char *getHexHash(struct conn_info *user, unsigned char *hash)
 
     return hexHash;
 }
-
+/*
 void closeConn(struct conn_info *user, int code)
 {
     printf("ExitCode: %d\n", code);
     exit(-1);
 }
-
+*/
 // If regex is correct, returns 1, if it is not, then returns 0
 short regexValid(const char *url, const char *regexStr)
 {
@@ -236,7 +238,7 @@ short regexValid(const char *url, const char *regexStr)
     printf("%s pasa el regex %s\n", url, regexStr);
     return 1;
 }
-
+/*
 int readChat(struct conn_info *client) // uri: /shat/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
 {
     int fd = -1;
@@ -274,10 +276,10 @@ int writeChat(struct conn_info *client, void *semaphore)
     sem_post(semaphoreTemp);
     return fd;
 }
-
+*/
 //token must be not initialized
 unsigned char * generateToken(int len){
-    unsigned char * token = malloc(len);
+    unsigned char * token = (unsigned char*) malloc(len);
     if(token==NULL)return NULL;
 
     if(RAND_bytes(token,len) != 1) {
@@ -285,7 +287,7 @@ unsigned char * generateToken(int len){
         return NULL;
     }
 
-    unsigned char * hexRand = malloc(2*len+1);
+    unsigned char * hexRand = (unsigned char*) malloc(2*len+1);
     if (hexRand == NULL)return NULL;
     
     hexRand[2*len] = '\0';
