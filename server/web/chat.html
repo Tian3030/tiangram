@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tiangram</title>
+    <link rel="stylesheet" href="chat.css" type="text/css"> 
+</head>
+<body>
+    <div class="chat-container">
+        <div id="messages" class="messages"> <!-- Here we add the fetch function-->
+            <script>
+                    function obtenerTextoChat() {
+                    fetch('/shats/%s')
+                    .then(response => response.text())
+                    .then(texto => {
+                    document.getElementById('messages').innerText = texto;
+                    })
+                    .catch(error => {
+                    console.error('Error al obtener el texto:', error);
+                    document.getElementById('messages').innerText = 'Error al cargar el texto';
+                });
+                }
+                setInterval(obtenerTextoChat, 5000);
+                obtenerTextoChat();
+            </script>
+        </div>
+
+        <div class="input-container">
+            <input type="text" id="textInput" placeholder="Type your message here" />
+            <!-- Button to send the text -->
+            <button type="button" id="sendButton">Send</button>
+        
+            <!-- JavaScript to handle the POST request -->
+            <script>
+                document.getElementById('sendButton').addEventListener('click', function() {
+                    // Get the typed text
+                    const message = document.getElementById('textInput').value;
+        
+                    // URL to which you want to send the POST request
+                    const url = '/shat/5ADBC5C0429DFE93F110D69C8F648DD8C2E3C2A6';
+        
+                    // Create a POST request
+                    fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'text/plain'
+                        },
+                        body: "message="+message+"<br>"
+                    })
+                    .then(response => {
+                        if (response.ok) {
+                            console.log('Message sent successfully');
+                        } else {
+                            console.error('Failed to send message');
+                        }
+                    })
+                    .catch(error => console.error('Error:', error));
+        
+                    // Clear the input field after sending the message
+                    document.getElementById('textInput').value = '';
+                });
+            </script>
+
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
